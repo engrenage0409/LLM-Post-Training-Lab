@@ -1,0 +1,7 @@
+# Install compatible CUDA PyTorch separately
+transformers>=4.50,<5
+trl>=0.22,<1
+peft>=0.15,<1
+datasets>=3,<5
+accelerate>=1,<2
+pytest>=8
