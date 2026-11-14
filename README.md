@@ -2,7 +2,7 @@
 
 A small **SFT / DPO / GRPO / Reward Model / PPO post-training lab** built with Hugging Face TRL, PEFT and PyTorch. Default model: `Qwen/Qwen2.5-0.5B-Instruct`, intended as a lower-memory starting point for an RTX 5060 8GB GPU.
 
-**Status (2026-11-14):** SFT/DPO/GRPO, Reward Models V1/V2 and sequence/token PPO have been trained on the target 8GB GPU. On the repeatedly used 600-question development set, sequence PPO scored 75.33% and token PPO scored 73.50%; these do not establish statistically significant or generally superior algorithms. New matched-budget, disjoint-test study is prepared but not yet run locally.
+**Status (2026-11-14):** SFT/DPO/GRPO, Reward Models V1/V2 and sequence/token PPO have been trained on the target 8GB GPU. On the repeatedly used 600-question development set, sequence PPO scored 75.33% and token PPO scored 73.50%; these do not establish statistically significant or generally superior algorithms. The matched-budget, disjoint-test study has now been run locally and is reported below.
 
 ## Layout
 
@@ -306,7 +306,7 @@ Inspect `outputs/ppo_token_40/train_metrics.jsonl` for token count, reward, roll
 
 ## Final project study: matched-budget PPO comparison and report
 
-**Project completion gate:** the learning implementation of SFT, DPO, GRPO, Reward Model, sequence PPO and token PPO/GAE is complete. Run the following final protocol once and inspect the generated results before marking the *experimental validation* complete.
+**Completed protocol (reproduction only):** the learning implementation of SFT, DPO, GRPO, Reward Model, sequence PPO and token PPO/GAE and the final local comparison are complete. The commands below document how the original study was run; do not rerun on the original observed final set and label it untouched.
 
 The command below:
 - applies the same SFT initialization, training questions, number of rollout prompts, two PPO epochs, maximum generated token budget, Python sampling seed and raw-policy sampling configuration to sequence PPO and token PPO;
@@ -329,7 +329,7 @@ Outputs:
 - `outputs/ppo_final/summary.json` — accuracy, exact counts and paired disagreements for SFT, sequence PPO and token PPO;
 - `outputs/ppo_final/FINAL_REPORT.md` — compact ready-to-save experimental report.
 
-The V1 and V2 training scripts now pass `attention_mask` to generation to avoid the earlier EOS/padding warning, and log `raw_advantage_mean`, `raw_advantage_std`, `critic_target_mae` (absolute target-versus-old-value error), as well as existing losses and clipping statistics. The two critics have different target definitions, so their losses should not be interpreted as directly comparable model-quality numbers. **Matching rollouts and random seeds does not prove a pure GAE effect:** the methods still differ in unit of action, reward shaping and state value definition. GPU feasibility of this *new* end-to-end automation still needs a local run.
+The V1 and V2 training scripts now pass `attention_mask` to generation to avoid the earlier EOS/padding warning, and log `raw_advantage_mean`, `raw_advantage_std`, `critic_target_mae` (absolute target-versus-old-value error), as well as existing losses and clipping statistics. The two critics have different target definitions, so their losses should not be interpreted as directly comparable model-quality numbers. **Matching rollouts and random seeds does not prove a pure GAE effect:** the methods still differ in unit of action, reward shaping and state value definition. This end-to-end protocol ran successfully on the target GPU; broader hardware reproducibility is not established.
 
 ## Final results — completed single-seed PPO study (2026-11-14)
 
