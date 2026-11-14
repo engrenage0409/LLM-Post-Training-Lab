@@ -12,7 +12,7 @@ p.add_argument("--output",default="outputs/grpo")
 a=p.parse_args()
 ds=Dataset.from_list([{k:x[k] for k in ("prompt","answer")} for x in load(a.data,("prompt","answer"))])
 cfg=GRPOConfig(output_dir=a.output,max_steps=a.steps,per_device_train_batch_size=2,
- gradient_accumulation_steps=2,num_generations=2,max_completion_length=32,
+ gradient_accumulation_steps=2,num_generations=2,max_completion_length=64,
  learning_rate=5e-6,use_vllm=False,logging_steps=1,save_strategy="no",report_to="none",seed=42,
  bf16=torch.cuda.is_available() and torch.cuda.is_bf16_supported(),
  fp16=torch.cuda.is_available() and not torch.cuda.is_bf16_supported())
