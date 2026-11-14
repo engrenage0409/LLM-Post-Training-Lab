@@ -99,6 +99,26 @@ For a short smoke run, use `--samples 30 --output-dir outputs/benchmark_smoke`; 
 
 Results are written to `outputs/benchmark/test.jsonl`, `manifest.json`, six per-model JSON files, and `summary.json` with accuracy per difficulty and individual improved/regressed examples relative to SFT. Each invocation recreates its test set deterministically with seed 2026. Do **not** use this test set repeatedly to tune hyperparameters and then claim unbiased final performance. Synthetic arithmetic is not a general reasoning benchmark.
 
+## GRPO reward ablation: accuracy vs. accuracy + format
+
+The existing GRPO setup uses two reward functions: exact integer correctness (0 or 1) and valid answer format (0 or 0.1). The new `--reward-mode` flag lets us isolate the effect of formatting rewards while keeping training configuration unchanged. The default, `accuracy_format`, preserves earlier behavior.
+
+Train **two independent GRPO runs from the same SFT adapter** with separate output directories:
+
+```powershell
+python -m scripts.train_grpo --sft-adapter outputs/sft --reward-mode accuracy --steps 100 --debug-samples 0 --output outputs/ablation_grpo_accuracy
+python -m scripts.train_grpo --sft-adapter outputs/sft --reward-mode accuracy_format --steps 100 --debug-samples 0 --output outputs/ablation_grpo_accuracy_format
+```
+
+Evaluate on the **same already-generated, untouched test file**:
+
+```powershell
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ablation_grpo_accuracy --data outputs/benchmark/test.jsonl --output outputs/ablation_grpo_accuracy_eval.json
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ablation_grpo_accuracy_format --data outputs/benchmark/test.jsonl --output outputs/ablation_grpo_accuracy_format_eval.json
+```
+
+For a fair comparison, use the same data, seed, base/SFT checkpoint, step budget and evaluation protocol. This is an exploratory analysis on the already-inspected 600-question set, **not a new unbiased held-out test**. GRPO samples stochastically, so one seed alone cannot establish robust superiority. Each stage-two adapter must be evaluated together with the SFT adapter.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
