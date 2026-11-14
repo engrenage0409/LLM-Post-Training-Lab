@@ -80,6 +80,25 @@ python -m scripts.evaluate --adapter outputs/grpo --output outputs/grpo_eval.jso
 
 Score is strict integer exact-match, accepting standalone integers or `\\boxed{n}` (not verbose unboxed answers). It is deliberately narrow and cannot establish general reasoning ability.
 
+## Six-model benchmark (held-out arithmetic)
+
+Create a deterministic **600-question** test file, excluding original training and validation questions *and their commuted equivalents* (`a+b` vs `b+a`). Questions are sampled across no-carry, ones-carry, and sums >= 100 categories.
+
+```powershell
+python -m pytest -q
+python -m scripts.benchmark --samples 600 --prepare-only
+```
+
+Then evaluate all six saved checkpoints sequentially in separate processes to release GPU memory:
+
+```powershell
+python -m scripts.benchmark --samples 600
+```
+
+For a short smoke run, use `--samples 30 --output-dir outputs/benchmark_smoke`; the full 600-question run requires **3,600 generations** and may take significantly longer. Ensure your adapters exist at `outputs/sft`, `outputs/dpo`, `outputs/grpo_chat_100`, `outputs/sft_dpo`, and `outputs/sft_grpo_100`, or adjust the `MODELS` mapping in `scripts/benchmark.py`.
+
+Results are written to `outputs/benchmark/test.jsonl`, `manifest.json`, six per-model JSON files, and `summary.json` with accuracy per difficulty and individual improved/regressed examples relative to SFT. Each invocation recreates its test set deterministically with seed 2026. Do **not** use this test set repeatedly to tune hyperparameters and then claim unbiased final performance. Synthetic arithmetic is not a general reasoning benchmark.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
