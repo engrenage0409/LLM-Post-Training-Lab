@@ -200,6 +200,38 @@ Each command compares original off-by-one preferences with negative answers form
 
 `--untrained` loads an independently randomly initialized scalar score head, **not an exact reconstruction of the pre-training initialization of the trained reward model**. Its random performance is a rough sanity-check baseline, not a paired controlled estimate. Compare original versus alternate negatives to detect possible shortcut reliance, but small samples and simple arithmetic prevent definitive conclusions. In particular, the always-zero negative is an easy distributional artifact and should not be used as the final benchmark.
 
+## Phase 7b: Reward Model V2 — balanced mixed negatives
+
+The original Reward Model V1 (50 steps, 128 train pairs) scored 62.5% on 32 held-out +1 pairs, but only 37.5% on -1 and 0% against a fixed wrong answer of zero. This suggests shortcut risk (not proof of a specific internal heuristic). V2 retains the original data and checkpoint and creates **a new preference file** with five negative candidates per question: correct+1, correct-1, correct+10, correct-10, and a deterministic balanced positive/negative random offset.
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.prepare_reward_v2
+```
+
+With the existing 128/32 question split, this produces **640 training preference pairs and 160 validation pairs**, saved in `data/reward_v2/train.jsonl` and `val.jsonl`. The five pairs for a question stay in the same split. Original `data/generated/*.jsonl` files remain untouched.
+
+Train a fresh reward adapter, separately from V1:
+
+```powershell
+python -m scripts.train_reward_model --train data/reward_v2/train.jsonl --val data/reward_v2/val.jsonl --steps 160 --output outputs/reward_model_v2
+```
+
+Evaluate the mixed-negative validation preferences:
+
+```powershell
+python -m scripts.evaluate_reward_model --adapter outputs/reward_model_v2 --data data/reward_v2/val.jsonl --output outputs/reward_model_v2_eval.json
+```
+
+Compare **V1 vs V2 on exactly the original 32 questions**, using the same diagnostic modes and no re-training. Running full diagnostics on the V2 expanded file would repeat each prompt five times:
+
+```powershell
+python -m scripts.diagnose_reward_model --adapter outputs/reward_model_v2 --train data/generated/train.jsonl --val data/generated/val.jsonl --output outputs/reward_diagnostics_v2.json
+```
+
+Check whether performance on `minus_one`, `random_error` and `fixed_zero` actually improves, and whether the +1 performance is retained. Because the diagnostic modes have now been inspected multiple times, they are exploratory; a brand new, sealed final benchmark is still required. V2 still uses synthetic arithmetic offsets—not human preferences or sampled policy failures—and may learn other shortcuts. PPO should not treat this RM as validated without further tests.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
