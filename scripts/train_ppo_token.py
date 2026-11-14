@@ -97,7 +97,7 @@ def main():
                 # used as the PPO behavior distribution; no top-k/top-p.
                 sequence = policy.generate(
                     input_ids=prompt_ids, max_new_tokens=a.max_new_tokens,
-                    do_sample=True, temperature=1.0, top_p=1.0,
+                    do_sample=True, temperature=1.0, top_p=1.0, top_k=0,
                     pad_token_id=tok.eos_token_id,
                 )
                 completion = tok.decode(sequence[0, length:], skip_special_tokens=True)
