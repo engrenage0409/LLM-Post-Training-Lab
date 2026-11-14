@@ -1,8 +1,8 @@
 # LLM Post-Training Lab
 
-A small **SFT / DPO / GRPO learning scaffold** built with Hugging Face TRL and PEFT. Default model: `Qwen/Qwen2.5-0.5B-Instruct`, intended as a lower-memory starting point for an RTX 5060 8GB GPU.
+A small **SFT / DPO / GRPO / Reward Model / PPO post-training lab** built with Hugging Face TRL, PEFT and PyTorch. Default model: `Qwen/Qwen2.5-0.5B-Instruct`, intended as a lower-memory starting point for an RTX 5060 8GB GPU.
 
-**Status:** SFT, DPO and GRPO smoke tests have run on the target GPU. The current 32-question toy evaluation is not a general reasoning benchmark. Reward Model and PPO are roadmap-only. Independent experiments remain available; optional SFT -> DPO and SFT -> GRPO chaining is now supported (not yet validated end-to-end).
+**Status (2026-11-14):** SFT/DPO/GRPO, Reward Models V1/V2 and sequence/token PPO have been trained on the target 8GB GPU. On the repeatedly used 600-question development set, sequence PPO scored 75.33% and token PPO scored 73.50%; these do not establish statistically significant or generally superior algorithms. New matched-budget, disjoint-test study is prepared but not yet run locally.
 
 ## Layout
 
@@ -303,6 +303,33 @@ python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ppo_token
 Inspect `outputs/ppo_token_40/train_metrics.jsonl` for token count, reward, rollout accuracy, actor/critic losses, sampled log ratio and clipping. The score is **not** a perfectly controlled comparison against sequence-level PPO (token-level PPO has different reward credit assignment and rollout budget). Benchmark already used during tuning => developmental, not an untouched final test.
 
 **Implementation caveats:** all tokens in an unpadded, single-response rollout are actions; generated EOS is included as an action if emitted, truncated completions are treated as terminal; GAE assumes terminal bootstrap zero. Critic is a linear head on a shared actor backbone, so its gradient can also update the actor's trainable LoRA via shared features. No adaptive KL, clipped value loss, partial-rollout bootstrap, optimizer scheduling, or distributed inference. Use with tiny experiments and verify training logs locally before reporting numerical results.
+
+## Final project study: matched-budget PPO comparison and report
+
+**Project completion gate:** the learning implementation of SFT, DPO, GRPO, Reward Model, sequence PPO and token PPO/GAE is complete. Run the following final protocol once and inspect the generated results before marking the *experimental validation* complete.
+
+The command below:
+- applies the same SFT initialization, training questions, number of rollout prompts, two PPO epochs, maximum generated token budget, Python sampling seed and raw-policy sampling configuration to sequence PPO and token PPO;
+- retains their **inherent algorithmic differences** (sequence vs token clipped objectives, post-response vs prefix-state value, terminal vs per-token KL and GAE);
+- generates 600 fresh arithmetic questions that exclude training/validation questions, commuted equivalents and every question in the *previous* `outputs/benchmark/test.jsonl`;
+- runs sequence PPO, token PPO and SFT inference in separate processes and saves paired per-question comparisons.
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.ppo_final_comparison --steps 40 --rollout-batch 2 --ppo-epochs 2 --samples 600 --output-dir outputs/ppo_final
+python -m scripts.ppo_final_report --directory outputs/ppo_final
+```
+
+Do not run `--prepare-only` into the same destination and then attempt the full command: the study intentionally fails if its sealed-test file already exists. For reruns with a fresh intentional protocol, choose another output directory. The new sealed test is intended for **one final evaluation**, not repeated hyperparameter tuning. Run the whole protocol before inspecting this test set; avoid inspecting or selecting checkpoints based on sealed-test performance.
+
+Outputs:
+- `outputs/ppo_final/sequence/` — independent sequence-level PPO adapter + training metrics;
+- `outputs/ppo_final/token/` — independent token-level PPO adapter + training metrics;
+- `outputs/ppo_final/summary.json` — accuracy, exact counts and paired disagreements for SFT, sequence PPO and token PPO;
+- `outputs/ppo_final/FINAL_REPORT.md` — compact ready-to-save experimental report.
+
+The V1 and V2 training scripts now pass `attention_mask` to generation to avoid the earlier EOS/padding warning, and log `raw_advantage_mean`, `raw_advantage_std`, `critic_target_mae` (absolute target-versus-old-value error), as well as existing losses and clipping statistics. The two critics have different target definitions, so their losses should not be interpreted as directly comparable model-quality numbers. **Matching rollouts and random seeds does not prove a pure GAE effect:** the methods still differ in unit of action, reward shaping and state value definition. GPU feasibility of this *new* end-to-end automation still needs a local run.
 
 ## Milestones
 
