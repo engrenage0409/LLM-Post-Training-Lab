@@ -3,16 +3,20 @@ from pathlib import Path
 from peft import PeftModel
 from transformers import AutoTokenizer,AutoModelForCausalLM
 from src.data.toy import load
+from src.model_loading import load_sft_merged_model
 from src.evaluation.metrics import accuracy
 p=argparse.ArgumentParser()
 p.add_argument("--model",default="Qwen/Qwen2.5-0.5B-Instruct")
 p.add_argument("--adapter",default=None)
+p.add_argument("--sft-adapter",default=None,help="Stage-one SFT adapter for chained evaluation")
 p.add_argument("--data",default="data/generated/val.jsonl")
 p.add_argument("--output",default="outputs/evaluation.json")
 a=p.parse_args()
 device="cuda" if torch.cuda.is_available() else "cpu"
 tok=AutoTokenizer.from_pretrained(a.model)
-model=AutoModelForCausalLM.from_pretrained(a.model,torch_dtype="auto").to(device)
+model=(load_sft_merged_model(a.model,a.sft_adapter) if a.sft_adapter
+       else AutoModelForCausalLM.from_pretrained(a.model,dtype="auto"))
+model=model.to(device)
 if a.adapter: model=PeftModel.from_pretrained(model,a.adapter)
 model.eval();results=[]
 for row in load(a.data,("prompt","answer")):
