@@ -331,17 +331,34 @@ Outputs:
 
 The V1 and V2 training scripts now pass `attention_mask` to generation to avoid the earlier EOS/padding warning, and log `raw_advantage_mean`, `raw_advantage_std`, `critic_target_mae` (absolute target-versus-old-value error), as well as existing losses and clipping statistics. The two critics have different target definitions, so their losses should not be interpreted as directly comparable model-quality numbers. **Matching rollouts and random seeds does not prove a pure GAE effect:** the methods still differ in unit of action, reward shaping and state value definition. GPU feasibility of this *new* end-to-end automation still needs a local run.
 
+## Final results — completed single-seed PPO study (2026-11-14)
+
+The final matched-budget study has now been run locally on the user's RTX 5060 8GB GPU. Its **new 600-question test** excludes all training, validation and previously used development Benchmark problems, including commuted forms of addition. The final test has been observed and should be **frozen (not reused for hyperparameter selection)**.
+
+| Model | Correct | Accuracy | Improvement over SFT |
+|---|---:|---:|---:|
+| SFT | 423 / 600 | 70.50% | — |
+| Sequence-level PPO | 443 / 600 | 73.83% | +3.33 pp |
+| Token-level PPO + GAE | 444 / 600 | 74.00% | +3.50 pp |
+
+In the paired comparison between the PPO variants, both were correct on 441 questions, both wrong on 154; sequence-only correct on 2 and token-only correct on 3. This is **one-question difference**, not evidence that GAE/token-level PPO is statistically or generally superior. Both PPO results improved over SFT in this one single-seed arithmetic experiment; it is **not** evidence for general LLM alignment ability.
+
+Training diagnostics for the two variants respectively: mean reward `0.8488 / 0.7950`, clip fraction `2.50% / 1.61%`, and value loss `0.3350 / 0.2575`. Do **not** compare the reward/value losses directly as equivalent quantities: Critic states and targets differ. PPO uses **rule-based correctness and format rewards**, not the learned V1/V2 reward models.
+
+See **[Project Summary / 项目总结](docs/PROJECT_SUMMARY.md)** for the technical retrospective, Chinese/English resume bullets, interview Q&A, detailed results and limitations. The locally generated `outputs/ppo_final/FINAL_REPORT.md` is the numerical source of truth for the run (not automatically pushed to GitHub).
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
 - [x] Smoke-test SFT, DPO and GRPO on target GPU (small toy dataset).
 - [ ] Validate chained SFT -> DPO and SFT -> GRPO runs and pin exact dependency versions.
-- [ ] Record held-out accuracy, reward/loss curves and per-sample regressions.
+- [x] Record final held-out PPO accuracy, training diagnostics and paired per-question comparisons (single seed).
 - [ ] Add real preference and verifiable-math datasets, careful split protocols.
-- [ ] Controlled ablations: DPO beta, GRPO generations/rewards, LoRA rank.
-- [x] Implement LoRA Reward Model training and pairwise evaluation scripts (local execution pending).
-- [x] Implement low-memory sequence-level PPO prototype (local execution pending).
-- [x] Implement experimental token-level PPO + GAE scripts and unit tests (local GPU smoke test pending).
-- [ ] Validate token-level PPO training and evaluate against an independent held-out dataset and learned reward model.
+- [x] Run DPO beta and GRPO reward / group-size ablations; LoRA rank ablation remains optional.
+- [x] Train and diagnose Reward Model V1/V2 on the target GPU; models remain unreliable as general reward scorers.
+- [x] Train and evaluate low-memory sequence-level PPO on the target GPU.
+- [x] Train and evaluate token-level PPO + GAE and complete a matched-budget comparison.
+- [x] Evaluate both PPO variants on a fresh disjoint arithmetic test set using **rule-based rewards** (not learned RM).
+- [ ] Future extension (not required for closeout): real preference RLHF, stronger RM, multi-seed and broader evaluation.
 
 See [docs/reading-list.md](docs/reading-list.md) for official references and papers.
