@@ -119,6 +119,34 @@ python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ablation_
 
 For a fair comparison, use the same data, seed, base/SFT checkpoint, step budget and evaluation protocol. This is an exploratory analysis on the already-inspected 600-question set, **not a new unbiased held-out test**. GRPO samples stochastically, so one seed alone cannot establish robust superiority. Each stage-two adapter must be evaluated together with the SFT adapter.
 
+## GRPO group-size ablation (G=2, 4, 8)
+
+`--num-generations` sets how many completions are sampled for each prompt. For a **single GPU**, the default is now `per_device_train_batch_size=2` and `gradient_accumulation_steps=4`: an **effective batch of 8 generated completions per optimizer step**, divisible by every tested group size. This changes the earlier default accumulation of 2; explicitly record the configuration when comparing with older checkpoints.
+
+First run a short smoke test for the largest group, especially on 8 GB VRAM:
+
+```powershell
+python -m scripts.train_grpo --sft-adapter outputs/sft --num-generations 8 --steps 1 --debug-samples 8 --output outputs/grpo_g8_smoke
+```
+
+Then train the three independent ablation runs (same SFT starting point, seed=42, reward mode, update count, and effective completion batch size):
+
+```powershell
+python -m scripts.train_grpo --sft-adapter outputs/sft --num-generations 2 --steps 100 --debug-samples 0 --output outputs/grpo_g2
+python -m scripts.train_grpo --sft-adapter outputs/sft --num-generations 4 --steps 100 --debug-samples 0 --output outputs/grpo_g4
+python -m scripts.train_grpo --sft-adapter outputs/sft --num-generations 8 --steps 100 --debug-samples 0 --output outputs/grpo_g8
+```
+
+Evaluate each using the same previously generated arithmetic test set (exploratory; it has already been inspected):
+
+```powershell
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/grpo_g2 --data outputs/benchmark/test.jsonl --output outputs/grpo_g2_eval.json
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/grpo_g4 --data outputs/benchmark/test.jsonl --output outputs/grpo_g4_eval.json
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/grpo_g8 --data outputs/benchmark/test.jsonl --output outputs/grpo_g8_eval.json
+```
+
+The effective batch is 8 **completions**, so G=2 uses 4 distinct prompts per optimizer step, G=4 uses 2, and G=8 uses 1. Thus the number of distinct questions seen differs even with the same number of optimizer updates. Compare `reward_std`, `frac_reward_zero_std`, throughput, VRAM, and accuracy; **do not infer a pure group-size causal effect without also controlling the number of unique prompts or doing additional matched-budget experiments**. The 8 GB feasibility of G=8 is not yet verified. Trainer APIs and group batching may differ by TRL version. Use `--gradient-accumulation-steps` to adjust the effective batch deliberately.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
