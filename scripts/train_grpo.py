@@ -8,13 +8,15 @@ from peft import LoraConfig
 from trl import GRPOConfig, GRPOTrainer
 from src.data.toy import load
 from src.model_loading import load_sft_merged_model
-from src.grpo.rewards import accuracy_reward, format_reward
+from src.grpo.rewards import accuracy_reward, format_reward, reward_functions_for_mode
 
 p = argparse.ArgumentParser()
 p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
 p.add_argument("--data", default="data/generated/train.jsonl")
 p.add_argument("--steps", type=int, default=1)
 p.add_argument("--sft-adapter", default=None, help="Continue from an SFT LoRA adapter")
+p.add_argument("--reward-mode", choices=("accuracy", "accuracy_format"), default="accuracy_format",
+               help="GRPO reward ablation: correctness only or correctness plus formatting")
 p.add_argument("--output", default="outputs/grpo")
 p.add_argument("--debug-samples", type=int, default=12,
                help="Maximum number of generated completions to print and save (0 disables logging)")
@@ -96,7 +98,8 @@ lora = LoraConfig(
 starting_model = load_sft_merged_model(a.model, a.sft_adapter) if a.sft_adapter else a.model
 trainer = GRPOTrainer(
     model=starting_model, args=cfg, train_dataset=ds,
-    reward_funcs=[logged_accuracy_reward, conversational_format_reward], peft_config=lora,
+    reward_funcs=reward_functions_for_mode(a.reward_mode, logged_accuracy_reward, conversational_format_reward),
+    peft_config=lora,
 )
 trainer.train()
 trainer.save_model(a.output)
