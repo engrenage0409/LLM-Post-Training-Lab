@@ -18,8 +18,9 @@ p.add_argument("--debug-samples", type=int, default=12,
                help="Maximum number of generated completions to print and save (0 disables logging)")
 a = p.parse_args()
 
+# Conversational prompts let the Instruct tokenizer apply its chat template.
 ds = Dataset.from_list([
-    {k: x[k] for k in ("prompt", "answer")}
+    {"prompt": [{"role": "user", "content": x["prompt"]}], "answer": x["answer"]}
     for x in load(a.data, ("prompt", "answer"))
 ])
 
@@ -32,16 +33,29 @@ if a.debug_samples > 0:
     debug_path.write_text("", encoding="utf-8")
 
 
+def completion_text(completion):
+    if isinstance(completion, list):
+        return str(completion[-1].get("content", "")) if completion else ""
+    if isinstance(completion, dict):
+        return str(completion.get("content", ""))
+    return str(completion)
+
+
+def conversational_format_reward(completions, **kwargs):
+    return format_reward([completion_text(c) for c in completions], **kwargs)
+
+
 def logged_accuracy_reward(completions, answer, **kwargs):
     """Score normally, and log a bounded number of raw training generations."""
     global debug_count, reward_calls
-    scores = accuracy_reward(completions, answer, **kwargs)
+    texts = [completion_text(c) for c in completions]
+    scores = accuracy_reward(texts, answer, **kwargs)
     if debug_count < a.debug_samples:
-        format_scores = format_reward(completions, **kwargs)
+        format_scores = format_reward(texts, **kwargs)
         prompts = kwargs.get("prompts", [])
         records = []
         for i, (completion, expected, score, fmt_score) in enumerate(
-            zip(completions, answer, scores, format_scores)
+            zip(texts, answer, scores, format_scores)
         ):
             if debug_count >= a.debug_samples:
                 break
@@ -79,7 +93,7 @@ lora = LoraConfig(
 )
 trainer = GRPOTrainer(
     model=a.model, args=cfg, train_dataset=ds,
-    reward_funcs=[logged_accuracy_reward, format_reward], peft_config=lora,
+    reward_funcs=[logged_accuracy_reward, conversational_format_reward], peft_config=lora,
 )
 trainer.train()
 trainer.save_model(a.output)
