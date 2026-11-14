@@ -268,6 +268,42 @@ python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ppo_40 --
 
 Compare against the pre-PPO SFT policy on the same test questions. Because `outputs/benchmark/test.jsonl` has already been used in extensive tuning, these results are **exploratory**, not untouched final generalization. Inspect `mean_reward`, `exact_accuracy`, `ppo_policy_loss`, `value_loss`, `mean_sampled_log_ratio` (not a guaranteed positive KL), and samples in the log. Training is stochastic; 40 steps or one seed do not prove PPO improvement. This code does not load a learned reward model or implement GAE; those are natural follow-up extensions.
 
+## Phase 8b: Token-level PPO + GAE (experimental)
+
+The original `scripts/train_ppo.py` is preserved as the **sequence-level baseline** (which scored 75.33% on the repeatedly used 600-question development benchmark after 40 steps). The new `scripts/train_ppo_token.py` implements a more faithful autoregressive token-action formulation:
+
+1. Actor samples a response *from its raw policy* (temperature 1, top-k disabled, top-p 1).
+2. For every output token `t`, evaluate `log pi_old(y_t | prompt, y_<t)` and `V(prompt, y_<t)`; **Critic sees only the prefix before the action**, not the sampled token itself.
+3. Disable PPO LoRA to compute frozen SFT-reference token log-probabilities; no duplicate base model is held in GPU memory.
+4. Apply token-level sampled log-ratio reward `-kl_coef * (log pi_old - log pi_ref)`, and add exact correctness + format reward **only to the final generated token**.
+5. Compute backward GAE with terminal value zero, `delta_t = r_t + gamma V_(t+1) - V_t` and `A_t = delta_t + gamma*lambda*A_(t+1)`. Returns = detached rollout values + GAE.
+6. Normalize advantage across *all* sampled tokens per rollout batch; re-evaluate new policy log-probabilities and prefix values for PPO clipped actor and critic MSE losses over repeated epochs.
+7. Save new policy LoRA and separate critic head. This is educational single-GPU PPO, **not a full production RLHF pipeline**; the reward remains deterministic correctness, not the learned RM.
+
+Run tests and a memory-safe 1-step smoke test **before** the full training:
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.train_ppo_token --steps 1 --rollout-batch 2 --ppo-epochs 2 --output outputs/ppo_token_smoke
+```
+
+If it succeeds, train an independent 40-step run:
+
+```powershell
+python -m scripts.train_ppo_token --steps 40 --rollout-batch 2 --ppo-epochs 2 --output outputs/ppo_token_40
+```
+
+Evaluate its *actor adapter*, always supplying the original SFT start:
+
+```powershell
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ppo_token_40 --data outputs/benchmark/test.jsonl --output outputs/ppo_token_40_eval.json
+```
+
+Inspect `outputs/ppo_token_40/train_metrics.jsonl` for token count, reward, rollout accuracy, actor/critic losses, sampled log ratio and clipping. The score is **not** a perfectly controlled comparison against sequence-level PPO (token-level PPO has different reward credit assignment and rollout budget). Benchmark already used during tuning => developmental, not an untouched final test.
+
+**Implementation caveats:** all tokens in an unpadded, single-response rollout are actions; generated EOS is included as an action if emitted, truncated completions are treated as terminal; GAE assumes terminal bootstrap zero. Critic is a linear head on a shared actor backbone, so its gradient can also update the actor's trainable LoRA via shared features. No adaptive KL, clipped value loss, partial-rollout bootstrap, optimizer scheduling, or distributed inference. Use with tiny experiments and verify training logs locally before reporting numerical results.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
@@ -278,6 +314,7 @@ Compare against the pre-PPO SFT policy on the same test questions. Because `outp
 - [ ] Controlled ablations: DPO beta, GRPO generations/rewards, LoRA rank.
 - [x] Implement LoRA Reward Model training and pairwise evaluation scripts (local execution pending).
 - [x] Implement low-memory sequence-level PPO prototype (local execution pending).
-- [ ] Implement full token-level PPO/GAE and evaluate with a reliable learned Reward Model.
+- [x] Implement experimental token-level PPO + GAE scripts and unit tests (local GPU smoke test pending).
+- [ ] Validate token-level PPO training and evaluate against an independent held-out dataset and learned reward model.
 
 See [docs/reading-list.md](docs/reading-list.md) for official references and papers.
