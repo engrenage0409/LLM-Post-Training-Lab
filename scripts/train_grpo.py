@@ -7,12 +7,14 @@ from datasets import Dataset
 from peft import LoraConfig
 from trl import GRPOConfig, GRPOTrainer
 from src.data.toy import load
+from src.model_loading import load_sft_merged_model
 from src.grpo.rewards import accuracy_reward, format_reward
 
 p = argparse.ArgumentParser()
 p.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
 p.add_argument("--data", default="data/generated/train.jsonl")
 p.add_argument("--steps", type=int, default=1)
+p.add_argument("--sft-adapter", default=None, help="Continue from an SFT LoRA adapter")
 p.add_argument("--output", default="outputs/grpo")
 p.add_argument("--debug-samples", type=int, default=12,
                help="Maximum number of generated completions to print and save (0 disables logging)")
@@ -91,8 +93,9 @@ lora = LoraConfig(
     r=8, lora_alpha=16, lora_dropout=0.05,
     target_modules=["q_proj", "v_proj"], task_type="CAUSAL_LM",
 )
+starting_model = load_sft_merged_model(a.model, a.sft_adapter) if a.sft_adapter else a.model
 trainer = GRPOTrainer(
-    model=a.model, args=cfg, train_dataset=ds,
+    model=starting_model, args=cfg, train_dataset=ds,
     reward_funcs=[logged_accuracy_reward, conversational_format_reward], peft_config=lora,
 )
 trainer.train()
