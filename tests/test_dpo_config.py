@@ -1,4 +1,5 @@
 import pytest
+from argparse import ArgumentTypeError
 
 from src.dpo.config import positive_beta
 
@@ -12,5 +13,5 @@ def test_valid_dpo_beta(value, expected):
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf", "abc"])
 def test_invalid_dpo_beta(value):
-    with pytest.raises(ValueError, match="DPO beta|Invalid DPO beta"):
+    with pytest.raises(ArgumentTypeError, match="DPO beta|Invalid DPO beta"):
         positive_beta(value)
