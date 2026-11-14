@@ -183,6 +183,23 @@ The test reports **preference accuracy** (fraction of validation pairs with `sco
 
 The current prototype loads one 0.5B sequence-classification model; it does not allocate policy, critic, and reward models concurrently. PPO/RLHF will be a subsequent separate implementation, after local RewardTrainer compatibility and GPU memory are verified. Library version pinning remains recommended.
 
+## Reward Model diagnostics: baseline, overfitting, shortcut patterns
+
+The trained reward model scored 62.50% (20/32) on original validation pairs with mean margin +0.0159 after 50 steps. These values are **not enough** to establish reliable learned correctness.
+
+Run the following diagnostics with exactly the same trained adapter; no retraining required:
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.diagnose_reward_model --adapter outputs/reward_model --output outputs/reward_diagnostics_trained.json
+python -m scripts.diagnose_reward_model --untrained --seed 42 --output outputs/reward_diagnostics_untrained.json
+```
+
+Each command compares original off-by-one preferences with negative answers formed using -1, +10, a reproducible random nonzero offset, and a fixed incorrect answer. It separately reports *training* (128) and *validation* (32) preference accuracy, mean chosen-minus-rejected margin, and per-example outputs.
+
+`--untrained` loads an independently randomly initialized scalar score head, **not an exact reconstruction of the pre-training initialization of the trained reward model**. Its random performance is a rough sanity-check baseline, not a paired controlled estimate. Compare original versus alternate negatives to detect possible shortcut reliance, but small samples and simple arithmetic prevent definitive conclusions. In particular, the always-zero negative is an easy distributional artifact and should not be used as the final benchmark.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
