@@ -167,6 +167,22 @@ python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/dpo_beta0
 
 Inspect `loss`, `rewards/accuracies`, `rewards/margins`, and `logps/rejected` / `logps/chosen` where emitted by TRL, plus exact-match accuracy and per-example changes. DPO beta is not simply a learning rate; it scales the policy-versus-reference preference log-ratio. This toy dataset uses synthetic off-by-one rejections and is **not** representative of realistic human preference data. The already-inspected 600-question benchmark is for exploratory comparison, not an untouched final test. Validate conclusions with multiple seeds and a fresh sealed set.
 
+## Phase 7: Train and evaluate a Reward Model
+
+This stage is **reward modeling**, not PPO yet. Train a separate Qwen2.5-0.5B scalar sequence-classification head with LoRA (including the `score` head in `modules_to_save`). The training data contains *chosen vs. rejected* complete user/assistant conversations; the objective is to assign the chosen conversation a higher scalar score. We deliberately **do not load the SFT adapter** into this separate classifier: the existing SFT LoRA targets a causal-LM task, and reward modeling uses its own sequence-classification architecture. A future PPO actor can still start from the SFT adapter.
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.train_reward_model --steps 1 --output outputs/reward_model_smoke
+python -m scripts.train_reward_model --steps 50 --output outputs/reward_model
+python -m scripts.evaluate_reward_model --adapter outputs/reward_model --output outputs/reward_model_eval.json
+```
+
+The test reports **preference accuracy** (fraction of validation pairs with `score(chosen) > score(rejected)`) and mean **reward margin** (`score(chosen) - score(rejected)`). JSON includes per-pair scores. `outputs/reward_model` saves a PEFT adapter *and* a learned `score` head, not a standalone full model; keep the base checkpoint available. Run the one-step smoke test first on an 8GB card. This uses **128 synthetic arithmetic preference pairs** for training and **32** for validation; it is a learning/demo dataset, NOT evidence of human-aligned preferences. It only distinguishes correct sums from a deliberately off-by-one wrong answer. No preference model should be claimed to generalize beyond this task.
+
+The current prototype loads one 0.5B sequence-classification model; it does not allocate policy, critic, and reward models concurrently. PPO/RLHF will be a subsequent separate implementation, after local RewardTrainer compatibility and GPU memory are verified. Library version pinning remains recommended.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
@@ -175,6 +191,7 @@ Inspect `loss`, `rewards/accuracies`, `rewards/margins`, and `logps/rejected` / 
 - [ ] Record held-out accuracy, reward/loss curves and per-sample regressions.
 - [ ] Add real preference and verifiable-math datasets, careful split protocols.
 - [ ] Controlled ablations: DPO beta, GRPO generations/rewards, LoRA rank.
-- [ ] Implement Reward Model + PPO/RLHF, including actor/reference/critic/reward metrics.
+- [x] Implement LoRA Reward Model training and pairwise evaluation scripts (local execution pending).
+- [ ] Implement PPO/RLHF with actor/reference/critic/reward metrics.
 
 See [docs/reading-list.md](docs/reading-list.md) for official references and papers.
