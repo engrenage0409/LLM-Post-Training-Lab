@@ -5,6 +5,7 @@ Run: python -m scripts.train_reward_model --steps 50
 import argparse
 import json
 from pathlib import Path
+from collections import Counter
 
 import torch
 from datasets import Dataset
@@ -70,8 +71,10 @@ def main():
         "base_model": a.model, "train_pairs": len(train_rows),
         "validation_pairs": len(val_rows), "steps": a.steps,
         "learning_rate": a.learning_rate,
+        "train_file": a.train, "validation_file": a.val,
+        "negative_type_counts": dict(Counter(r.get("negative_type", "unspecified") for r in train_rows)),
         "method": "pairwise reward modeling with LoRA",
-        "warning": "Only synthetic off-by-one arithmetic preferences",
+        "warning": "Synthetic arithmetic preferences; not evidence of human alignment",
     }, indent=2), encoding="utf-8")
     print(f"Saved reward-model LoRA adapter and tokenizer to {out}")
 
