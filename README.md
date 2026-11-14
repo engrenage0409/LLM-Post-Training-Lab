@@ -147,6 +147,26 @@ python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/grpo_g8 -
 
 The effective batch is 8 **completions**, so G=2 uses 4 distinct prompts per optimizer step, G=4 uses 2, and G=8 uses 1. Thus the number of distinct questions seen differs even with the same number of optimizer updates. Compare `reward_std`, `frac_reward_zero_std`, throughput, VRAM, and accuracy; **do not infer a pure group-size causal effect without also controlling the number of unique prompts or doing additional matched-budget experiments**. The 8 GB feasibility of G=8 is not yet verified. Trainer APIs and group batching may differ by TRL version. Use `--gradient-accumulation-steps` to adjust the effective batch deliberately.
 
+## DPO beta ablation (0.05, 0.10, 0.20)
+
+`--beta` adjusts the preference log-ratio scale in the DPO loss (default `0.1` to preserve prior runs). Compare these three **independent** runs from the same `outputs/sft` starting model with identical training examples, update count, LoRA, and seed:
+
+```powershell
+python -m scripts.train_dpo --sft-adapter outputs/sft --beta 0.05 --steps 20 --output outputs/dpo_beta005
+python -m scripts.train_dpo --sft-adapter outputs/sft --beta 0.10 --steps 20 --output outputs/dpo_beta010
+python -m scripts.train_dpo --sft-adapter outputs/sft --beta 0.20 --steps 20 --output outputs/dpo_beta020
+```
+
+Score all three on the **same existing exploratory benchmark**:
+
+```powershell
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/dpo_beta005 --data outputs/benchmark/test.jsonl --output outputs/dpo_beta005_eval.json
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/dpo_beta010 --data outputs/benchmark/test.jsonl --output outputs/dpo_beta010_eval.json
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/dpo_beta020 --data outputs/benchmark/test.jsonl --output outputs/dpo_beta020_eval.json
+```
+
+Inspect `loss`, `rewards/accuracies`, `rewards/margins`, and `logps/rejected` / `logps/chosen` where emitted by TRL, plus exact-match accuracy and per-example changes. DPO beta is not simply a learning rate; it scales the policy-versus-reference preference log-ratio. This toy dataset uses synthetic off-by-one rejections and is **not** representative of realistic human preference data. The already-inspected 600-question benchmark is for exploratory comparison, not an untouched final test. Validate conclusions with multiple seeds and a fresh sealed set.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
