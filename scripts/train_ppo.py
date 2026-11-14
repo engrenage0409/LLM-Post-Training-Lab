@@ -53,6 +53,7 @@ def main():
     p.add_argument("--value-learning-rate", type=float, default=1e-4)
     p.add_argument("--clip-epsilon", type=float, default=0.2)
     p.add_argument("--kl-coef", type=float, default=0.02)
+    p.add_argument("--seed", type=int, default=42)
     p.add_argument("--output", default="outputs/ppo")
     args = p.parse_args()
     if min(args.steps, args.rollout_batch, args.ppo_epochs, args.max_new_tokens) <= 0:
@@ -62,10 +63,10 @@ def main():
     if not 0 < args.clip_epsilon < 1 or args.kl_coef < 0:
         p.error("clip-epsilon must be in (0,1); kl-coef must be nonnegative")
 
-    torch.manual_seed(42)
-    random.seed(42)
+    torch.manual_seed(args.seed)
+    random.seed(args.seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(42)
+        torch.cuda.manual_seed_all(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rows = load(args.data, ("prompt", "answer"))
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -108,12 +109,14 @@ def main():
                 [{"role": "user", "content": row["prompt"]}],
                 tokenize=False, add_generation_prompt=True
             )
-            prompt_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(device)
+            encoded = tokenizer(prompt, return_tensors="pt").to(device)
+            prompt_ids = encoded["input_ids"]
             prompt_length = prompt_ids.size(1)
             with torch.no_grad():
                 generated = policy.generate(
                     input_ids=prompt_ids, max_new_tokens=args.max_new_tokens,
-                    do_sample=True, temperature=args.temperature,
+                    do_sample=True, temperature=args.temperature, top_p=1.0, top_k=0,
+                    attention_mask=encoded["attention_mask"],
                     pad_token_id=tokenizer.eos_token_id,
                 )
                 completion = tokenizer.decode(
@@ -149,6 +152,9 @@ def main():
                 "completion": completion,
             })
 
+        raw_advantages = torch.cat([r["advantage"] for r in rollouts])
+        # Raw unnormalized advantage and value error are recorded for diagnostics.
+        raw_value_errors = raw_advantages
         # Avoid overly large updates from the first few random critic estimates.
         advantages = torch.cat([r["advantage"] for r in rollouts])
         adv_mean = advantages.mean()
@@ -185,6 +191,9 @@ def main():
 
         record = {
             "step": step,
+            "raw_advantage_mean": raw_advantages.mean().item(),
+            "raw_advantage_std": raw_advantages.std(unbiased=False).item(),
+            "critic_target_mae": raw_value_errors.abs().mean().item(),
             "mean_reward": sum(r["reward"] for r in rollouts) / len(rollouts),
             "exact_accuracy": sum(r["correct"] for r in rollouts) / len(rollouts),
             "mean_sampled_log_ratio": sum(r["sampled_log_ratio"] for r in rollouts) / len(rollouts),
@@ -213,6 +222,8 @@ def main():
         "sft_adapter": args.sft_adapter,
         "data": args.data,
         "steps": args.steps,
+        "seed": args.seed,
+        "temperature": args.temperature,
         "rollout_batch": args.rollout_batch,
         "ppo_epochs": args.ppo_epochs,
         "max_new_tokens": args.max_new_tokens,
