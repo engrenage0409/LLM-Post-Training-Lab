@@ -36,6 +36,7 @@ def main():
     p.add_argument("--kl-coef", type=float, default=0.02)
     p.add_argument("--gamma", type=float, default=1.0)
     p.add_argument("--gae-lambda", type=float, default=0.95)
+    p.add_argument("--seed", type=int, default=42)
     p.add_argument("--output", default="outputs/ppo_token")
     a = p.parse_args()
 
@@ -48,10 +49,10 @@ def main():
     if not (0 <= a.gamma <= 1 and 0 <= a.gae_lambda <= 1):
         p.error("gamma and gae-lambda must be in [0,1]")
 
-    torch.manual_seed(42)
-    random.seed(42)
+    torch.manual_seed(a.seed)
+    random.seed(a.seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(42)
+        torch.cuda.manual_seed_all(a.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rows = load(a.data, ("prompt", "answer"))
     tok = AutoTokenizer.from_pretrained(a.model)
@@ -90,7 +91,8 @@ def main():
                 [{"role": "user", "content": row["prompt"]}],
                 tokenize=False, add_generation_prompt=True,
             )
-            prompt_ids = tok(text, return_tensors="pt")["input_ids"].to(device)
+            encoded = tok(text, return_tensors="pt").to(device)
+            prompt_ids = encoded["input_ids"]
             length = prompt_ids.size(1)
             with torch.no_grad():
                 # Sampling at temperature=1 matches the raw-policy logprobs
@@ -98,6 +100,7 @@ def main():
                 sequence = policy.generate(
                     input_ids=prompt_ids, max_new_tokens=a.max_new_tokens,
                     do_sample=True, temperature=1.0, top_p=1.0, top_k=0,
+                    attention_mask=encoded["attention_mask"],
                     pad_token_id=tok.eos_token_id,
                 )
                 completion = tok.decode(sequence[0, length:], skip_special_tokens=True)
@@ -131,6 +134,8 @@ def main():
                 "completion": completion,
             })
 
+        raw = torch.cat([x["advantages"] for x in rollouts])
+        critic_mae = raw.abs().mean().item()
         # Normalize across all action tokens, not independently by response.
         combined = torch.cat([x["advantages"] for x in rollouts])
         mean = combined.mean()
@@ -165,6 +170,9 @@ def main():
 
         record = {
             "step": step,
+            "raw_advantage_mean": raw.mean().item(),
+            "raw_advantage_std": raw.std(unbiased=False).item(),
+            "critic_target_mae": critic_mae,
             "mean_reward": sum(x["reward"] for x in rollouts) / len(rollouts),
             "rollout_accuracy": sum(x["correct"] for x in rollouts) / len(rollouts),
             "mean_sampled_log_ratio": sum(x["sampled_log_ratio"] for x in rollouts) / len(rollouts),
@@ -191,7 +199,7 @@ def main():
     (out / "experiment.json").write_text(json.dumps({
         "algorithm": "educational token-level PPO with GAE",
         "base_model": a.model, "sft_adapter": a.sft_adapter,
-        "data": a.data, "steps": a.steps, "rollout_batch": a.rollout_batch,
+        "data": a.data, "steps": a.steps, "seed": a.seed, "rollout_batch": a.rollout_batch,
         "ppo_epochs": a.ppo_epochs, "max_new_tokens": a.max_new_tokens,
         "learning_rate": a.learning_rate, "value_learning_rate": a.value_learning_rate,
         "clip_epsilon": a.clip_epsilon, "kl_coef": a.kl_coef,
