@@ -232,6 +232,42 @@ python -m scripts.diagnose_reward_model --adapter outputs/reward_model_v2 --trai
 
 Check whether performance on `minus_one`, `random_error` and `fixed_zero` actually improves, and whether the +1 performance is retained. Because the diagnostic modes have now been inspected multiple times, they are exploratory; a brand new, sealed final benchmark is still required. V2 still uses synthetic arithmetic offsets—not human preferences or sampled policy failures—and may learn other shortcuts. PPO should not treat this RM as validated without further tests.
 
+## Phase 8: Low-memory educational PPO (single terminal reward)
+
+This is a **working-code prototype awaiting a local GPU smoke test**. It deliberately implements **sequence-level PPO**, where one sampled full completion counts as **one action**, not a production-style token-level RLHF PPO with per-token rewards, GAE, or an independently pretrained value function.
+
+- **Policy / actor:** merge SFT LoRA into Qwen2.5-0.5B, then train a fresh LoRA.
+- **Reference:** same SFT-merged backbone with PPO LoRA temporarily disabled (`policy.disable_adapter()`); no second 0.5B reference model on GPU.
+- **Critic / value:** new small linear value head trained alongside policy (saved separately).
+- **Reward:** exact integer correctness (1.0) and valid integer format (0.1) using Python, **not** the unreliable V1/V2 learned Reward Model.
+- **Return:** sampled terminal reward minus `kl_coef * (old_sequence_logp - reference_sequence_logp)`. That sampled log-ratio is a noisy KL estimator and may be negative.
+- **Update:** sequence probability ratio `exp(new_logp - old_logp)` with PPO clipping and critic MSE.
+- **Data / GPU:** one base model, one prompt at a time, small LoRA and head. Default rollout batch=2, two PPO epochs, max completion 12 tokens.
+
+Run first with only one step and inspect logs / memory:
+
+```powershell
+git pull origin main
+python -m pytest -q
+python -m scripts.train_ppo --steps 1 --rollout-batch 2 --ppo-epochs 2 --output outputs/ppo_smoke
+```
+
+If that succeeds, train a new adapter, **not overwriting SFT**:
+
+```powershell
+python -m scripts.train_ppo --steps 40 --rollout-batch 4 --ppo-epochs 2 --output outputs/ppo_40
+```
+
+Outputs: `adapter_model.safetensors`, `value_head.pt`, `train_metrics.jsonl`, `experiment.json`. The critic head is for continued PPO training and **not** needed for ordinary text generation.
+
+PPO adapter must be evaluated with its original SFT start (as with chained DPO/GRPO):
+
+```powershell
+python -m scripts.evaluate --sft-adapter outputs/sft --adapter outputs/ppo_40 --data outputs/benchmark/test.jsonl --output outputs/ppo_40_eval.json
+```
+
+Compare against the pre-PPO SFT policy on the same test questions. Because `outputs/benchmark/test.jsonl` has already been used in extensive tuning, these results are **exploratory**, not untouched final generalization. Inspect `mean_reward`, `exact_accuracy`, `ppo_policy_loss`, `value_loss`, `mean_sampled_log_ratio` (not a guaranteed positive KL), and samples in the log. Training is stochastic; 40 steps or one seed do not prove PPO improvement. This code does not load a learned reward model or implement GAE; those are natural follow-up extensions.
+
 ## Milestones
 
 - [x] Organized source, SFT/DPO/GRPO training entrypoints, toy data, reward and evaluation code.
@@ -241,6 +277,7 @@ Check whether performance on `minus_one`, `random_error` and `fixed_zero` actual
 - [ ] Add real preference and verifiable-math datasets, careful split protocols.
 - [ ] Controlled ablations: DPO beta, GRPO generations/rewards, LoRA rank.
 - [x] Implement LoRA Reward Model training and pairwise evaluation scripts (local execution pending).
-- [ ] Implement PPO/RLHF with actor/reference/critic/reward metrics.
+- [x] Implement low-memory sequence-level PPO prototype (local execution pending).
+- [ ] Implement full token-level PPO/GAE and evaluate with a reliable learned Reward Model.
 
 See [docs/reading-list.md](docs/reading-list.md) for official references and papers.
